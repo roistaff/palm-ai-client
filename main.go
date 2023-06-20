@@ -1,9 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -11,58 +12,106 @@ import (
 	"strings"
 
 	markdown "github.com/MichaelMure/go-term-markdown"
+	"github.com/fatih/color"
+	"github.com/manifoldco/promptui"
 )
 
 type Candidate struct {
 	Output string `json:"output"`
 }
 
-func InputPrompt(label string) string {
-	var s string
-	r := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Fprint(os.Stderr, label+" ")
-		s, _ = r.ReadString('\n')
-		if s != "" {
-			break
-		}
-	}
-	return strings.TrimSpace(s)
+type Error struct {
+	Code    int
+	Message string
+	Status  string
 }
+
+var Log string
+
+func AddLog(text string) {
+	Log += text
+}
+
+func SaveLog() error {
+	err := ioutil.WriteFile("palm-log.txt", []byte(Log), 0644)
+	return err
+}
+
 func main() {
+	savelog := flag.Bool("p", false, "bool flag")
+	flag.Parse()
+	color.Cyan("PaLM2 AI client\n\n")
+
 	API_KEY := os.Getenv("PALM_KEY")
 	if API_KEY == "" {
-		fmt.Println("api key not found.Please type in terminal `export PALM_KEY=your_api_key`")
+		fmt.Println("API key not found. Please set your API key using `export PALM_KEY=your_api_key`")
 		os.Exit(0)
 	}
+
 	posturl := "https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generateText?key=" + API_KEY
+
 	for {
-		client := new(http.Client)
-		text := strings.Replace(InputPrompt(">>> "), "\"", "'", -1)
-		var promptData = []byte(`{"prompt":{"text":"` + text + `"}}`)
-		request, error := http.NewRequest("POST", posturl, bytes.NewBuffer(promptData))
+		client := &http.Client{}
+
+		validate := func(input string) error {
+			if input == "" {
+				return errors.New("No values.")
+			}
+			return nil
+		}
+
+		prompt := promptui.Prompt{
+			Label:    "You  ",
+			Validate: validate,
+		}
+
+		result, err := prompt.Run()
+
+		if err == promptui.ErrInterrupt {
+			if *savelog == true {
+				fmt.Println("log dasuyo sikosiko")
+			}
+			fmt.Println(color.HiGreenString("\U0001F5F8"), "Program has run successfully.")
+			os.Exit(1)
+		}
+
+		text := strings.Replace(result, "\"", "'", -1)
+		promptData := []byte(`{"prompt":{"text":"` + text + `"}}`)
+
+		request, err := http.NewRequest("POST", posturl, bytes.NewBuffer(promptData))
+		if err != nil {
+			panic(err)
+		}
 		request.Header.Set("Content-Type", "application/json; charset=UTF-8")
-		response, error := client.Do(request)
-		if error != nil {
-			panic(error)
+
+		response, err := client.Do(request)
+		if err != nil {
+			panic(err)
 		}
 		defer response.Body.Close()
+
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			panic(err)
 		}
+
 		var data map[string][]Candidate
 		err = json.Unmarshal(body, &data)
 		if err != nil {
-			fmt.Println("JSON parse erorr:", err)
+			fmt.Println("JSON parse error:", err)
 			os.Exit(0)
 		}
+
 		if len(data["candidates"]) > 0 {
 			output := data["candidates"][0].Output
-			result := markdown.Render(output, 80, 4)
-			fmt.Println("PaLM:\n\n", string(result)[1:])
+			result := markdown.Render(output, 80, 7)
+			view := string(result)
+			if view != "" {
+				view = view[7:]
+			}
+			fmt.Println("PaLM2:", view)
 		} else {
-			fmt.Println("Erorr:No response.Try agin.")
+			fmt.Println("Error: No response. Please try again.")
 		}
 	}
 }
