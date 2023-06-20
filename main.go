@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	markdown "github.com/MichaelMure/go-term-markdown"
 	"github.com/fatih/color"
@@ -29,11 +30,13 @@ type Error struct {
 var Log string
 
 func AddLog(text string) {
-	Log += text
+	Log += text + "\n"
 }
 
 func SaveLog() error {
-	err := ioutil.WriteFile("palm-log.txt", []byte(Log), 0644)
+	dir, _ := os.UserHomeDir()
+	file_name := dir + "/palm-log" + time.Now().Format("2006,01,02,15:04") + ".txt"
+	err := ioutil.WriteFile(file_name, []byte(Log), 0644)
 	return err
 }
 
@@ -50,6 +53,7 @@ func main() {
 
 	posturl := "https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generateText?key=" + API_KEY
 
+	AddLog("PaLM2 talk log")
 	for {
 		client := &http.Client{}
 
@@ -69,13 +73,15 @@ func main() {
 
 		if err == promptui.ErrInterrupt {
 			if *savelog == true {
-				fmt.Println("log dasuyo sikosiko")
+				SaveLog()
+				fmt.Println("Log has saved.")
 			}
 			fmt.Println(color.HiGreenString("\U0001F5F8"), "Program has run successfully.")
 			os.Exit(1)
 		}
 
 		text := strings.Replace(result, "\"", "'", -1)
+		AddLog("You  :" + text)
 		promptData := []byte(`{"prompt":{"text":"` + text + `"}}`)
 
 		request, err := http.NewRequest("POST", posturl, bytes.NewBuffer(promptData))
@@ -110,8 +116,10 @@ func main() {
 				view = view[7:]
 			}
 			fmt.Println("PaLM2:", view)
+			AddLog("PaLM2:" + output)
 		} else {
 			fmt.Println("Error: No response. Please try again.")
+			AddLog("No response")
 		}
 	}
 }
